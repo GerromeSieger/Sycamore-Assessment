@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sycamore-api
+  labels:
+    app: sycamore-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sycamore-api
+  template:
+    metadata:
+      labels:
+        app: sycamore-api
+    spec:
+      containers:
+        - name: api
+          # Use a proper application image instead of inline memory-leaking code
+          # In production, this would be your built application image
+          image: node:18-alpine
+          command: ["node", "-e"]
+          args:
+            - |
+              const http = require('http');
+              const server = http.createServer((req, res) => {
+                if (req.url === '/health' || req.url === '/healthz') {
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));
+                } else if (req.url === '/ready') {
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ status: 'ready' }));
+                } else {
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    message: 'Welcome to the Sycamore DevOps Assessment API',
+                    status: 'Healthy',
+                    timestamp: new Date().toISOString()
+                  }));
+                }
+              });
+              server.listen(3000, () => console.log('Server running on port 3000'));
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+          # Liveness probe - restarts container if it becomes unresponsive
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe - removes pod from service if not ready
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sycamore-api
+  labels:
+    app: sycamore-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: sycamore-api
